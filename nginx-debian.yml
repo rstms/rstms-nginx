@@ -1,0 +1,152 @@
+---
+
+- hosts: all
+
+  become: true
+
+  vars:
+    ansible_user: root
+    domains:
+      - awx.rstms.net
+      - dockerhub.rstms.net
+      - fileserver.rstms.net
+    www_user: www-data
+    enable_certbot: True
+
+  tasks:
+  
+  - name: apt update and install nginx package
+    apt: 
+      update_cache: yes
+      pkg:
+        - nginx
+        - ufw
+
+  - name: set firewall profile
+    ufw:
+      rule: allow
+      name: Nginx Full 
+
+  - name: get firewall status
+    command: ufw status
+    register: status_firewall
+
+  - debug: 'msg={{ status_firewall }}'
+
+  - name: check nginx service
+    command: systemctl status nginx
+    register: status_service
+
+  - debug: 'msg={{ status_service }}'
+   
+  - name: ensure domain dirs exist
+    file:
+      path: '/var/www/{{ item }}/html'
+      state: directory
+      owner: '{{ www_user }}' 
+      group: '{{ www_user }}' 
+      mode: '0700'
+    with_items: '{{ domains }}'
+
+  - name: write index.hmtl
+    copy:
+      dest: '/var/www/{{ item }}/html/index.html'
+      content: |
+        <html>
+            <head>
+                <title>Welcome to {{ item }}</title>
+            </head>
+            <body>
+                <h1>Success! Your Nginx server is successfully configured for <em>{{ item }}</em>.</h1>
+                <p>This is a sample page.</p>
+            </body>
+        </html>
+      owner: '{{ www_user }}'
+      group: '{{ www_user }}'
+      mode: '0400'
+    with_items: '{{ domains }}'
+
+  - name: ensure sites_available exists
+    file:
+      path: /etc/nginx/sites-available
+      state: directory
+      owner: '{{ www_user }}'
+      group: '{{ www_user }}'
+      mode: '0700'
+    with_items: '{{ domains }}'
+
+  - name: write configuration blocks
+    copy:
+      dest: /etc/nginx/sites-available/{{ item }}
+      content: |
+        server {
+            listen 80;
+            listen [::]:80;
+
+            root /var/www/{{ item }}/html;
+            index index.html;
+
+            server_name {{ item }};
+
+            location / {
+                try_files $uri $uri/ =404;
+            }
+        }
+      owner: '{{ www_user }}'
+      group: '{{ www_user }}'
+      mode: '0400'
+    with_items: '{{ domains }}'
+
+  - name: link directories to activate
+    file:
+      src: /etc/nginx/sites-available/{{ item }}
+      path: /etc/nginx/sites-enabled/{{ item }}
+      state: link
+      owner: '{{ www_user }}'
+      group: '{{ www_user }}'
+    with_items: '{{ domains }}'
+
+  - name: edit server_names_hash_bucket_size
+    replace:
+      path: /etc/nginx/nginx.conf
+      regexp: '^(\s*server_names_hash_bucket_size\s).*;$'
+      replace: '\164;'
+
+  - name: check nginx config files for errors
+    command: nginx -t
+    register: status_config
+
+  - debug: 'msg={{ status_config }}'
+
+  - name: restart nginx
+    command: systemctl restart nginx
+
+  - name: ensure certbot packages installed
+    apt:
+      pkg:
+        - python3-acme 
+        - python3-certbot 
+        - python3-mock 
+        - python3-openssl 
+        - python3-pkg-resources 
+        - python3-pyparsing 
+        - python3-zope.interface 
+        - python3-certbot-nginx
+
+  - name: ensure certbot is registered
+    command: certbot -n --agree-tos -m {{ certbot_email }} register
+    register: status_certbot_register
+    ignore_errors: yes
+    when: '{{ enable_certbot }}'
+
+  - debug: 'msg={{ status_certbot_register }}'
+    when: '{{ enable_certbot }}'
+
+  - name: update certbot cert for each domain
+    command: certbot -n --nginx -d {{ item }}
+    register: status_certbot
+    with_items: '{{ domains }}'
+    when: '{{ enable_certbot }}'
+
+  - debug: 'msg={{ status_certbot }}'
+    when: '{{ enable_certbot }}'
