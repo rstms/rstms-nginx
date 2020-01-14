@@ -1,0 +1,25 @@
+- name: ensure certbot packages installed
+  apt:
+    pkg:
+      - python3-acme 
+      - python3-certbot 
+      - python3-mock 
+      - python3-openssl 
+      - python3-pkg-resources 
+      - python3-pyparsing 
+      - python3-zope.interface 
+      - python3-certbot-nginx
+
+- name: ensure certbot is registered
+  command: certbot -n --agree-tos -m {{ certbot_email }} register
+  register: status_certbot_register
+  ignore_errors: yes
+
+- debug: 'msg={{ status_certbot_register }}'
+
+- name: update certbot cert for each domain
+  command: certbot -n --nginx --redirect -d {{ item }}
+  register: status_certbot
+  with_items: '{{ domains }}'
+
+- debug: 'msg={{ status_certbot }}'

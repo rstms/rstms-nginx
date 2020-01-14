@@ -1,0 +1,105 @@
+- name: apt update and install nginx package
+  apt: 
+    update_cache: yes
+    pkg:
+      - nginx
+      - ufw
+
+- name: set firewall profile
+  ufw:
+    rule: allow
+    name: Nginx Full 
+
+- name: get firewall status
+  command: ufw status
+  register: status_firewall
+
+- debug: 'msg={{ status_firewall }}'
+
+- name: check nginx service
+  command: systemctl status nginx
+  register: status_service
+
+- debug: 'msg={{ status_service }}'
+ 
+- name: ensure domain dirs exist
+  file:
+    path: '/var/www/{{ item }}/html'
+    state: directory
+    owner: '{{ www_user }}' 
+    group: '{{ www_user }}' 
+    mode: '0700'
+  with_items: '{{ domains }}'
+
+- name: write index.hmtl
+  copy:
+    dest: '/var/www/{{ item }}/html/index.html'
+    content: |
+      <html>
+          <head>
+              <title>Welcome to {{ item }}</title>
+          </head>
+          <body>
+              <h1>Success! Your Nginx server is successfully configured for <em>{{ item }}</em>.</h1>
+              <p>This is a sample page.</p>
+          </body>
+      </html>
+    owner: '{{ www_user }}'
+    group: '{{ www_user }}'
+    mode: '0400'
+  with_items: '{{ domains }}'
+
+- name: ensure sites_available exists
+  file:
+    path: /etc/nginx/sites-available
+    state: directory
+    owner: '{{ www_user }}'
+    group: '{{ www_user }}'
+    mode: '0700'
+  with_items: '{{ domains }}'
+
+- name: write configuration blocks
+  copy:
+    dest: /etc/nginx/sites-available/{{ item }}
+    content: |
+      server {
+          listen 80;
+          listen [::]:80;
+
+          root /var/www/{{ item }}/html;
+          index index.html;
+
+          server_name {{ item }};
+
+          location / {
+              try_files $uri $uri/ =404;
+          }
+      }
+    owner: '{{ www_user }}'
+    group: '{{ www_user }}'
+    mode: '0400'
+  with_items: '{{ domains }}'
+
+- name: link directories to activate
+  file:
+    src: /etc/nginx/sites-available/{{ item }}
+    path: /etc/nginx/sites-enabled/{{ item }}
+    state: link
+    owner: '{{ www_user }}'
+    group: '{{ www_user }}'
+  with_items: '{{ domains }}'
+
+- name: edit server_names_hash_bucket_size
+  replace:
+    path: /etc/nginx/nginx.conf
+    regexp: '^(\s*server_names_hash_bucket_size\s).*;$'
+    replace: '\164;'
+
+- name: check nginx config files for errors
+  command: nginx -t
+  register: status_config
+
+- debug: 'msg={{ status_config }}'
+
+- name: restart nginx
+  command: systemctl restart nginx

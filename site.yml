@@ -1,0 +1,22 @@
+---
+
+- hosts: all
+
+  become: true
+
+  vars:
+    ansible_user: root
+    enable_nginx: False
+    enable_certbot: False 
+    enable_registry: False
+
+  roles: 
+
+  - role: nginx
+    when: enable_nginx|bool
+
+  - role: certbot
+    when: enable_certbot|bool
+
+  - role: registry
+    when: enable_registry|bool

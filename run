@@ -1,2 +1,0 @@
-#!/bin/bash
-ansible-playbook -i awx.rstms.net, --extra-vars certbot_email=mkrueger@rstms.net nginx-debian.yml

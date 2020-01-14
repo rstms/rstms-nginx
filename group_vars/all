@@ -1,0 +1,11 @@
+ansible_user: root
+domains:
+  - awx.rstms.net
+  - dockerhub.rstms.net
+  - fileserver.rstms.net
+www_user: www-data
+registry_user: dockerhub
+enable_nginx: True
+enable_certbot: True
+enable_registry: True
+registry_user_db: "{{ lookup('file', lookup('env', 'HOME')+'/secret/registry-users.json') }}"

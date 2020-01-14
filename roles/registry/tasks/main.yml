@@ -1,0 +1,71 @@
+- name: ensure dockerhub group exists
+  group:
+    name: "{{ registry_user }}"
+
+- name: ensure dockerhub user exists
+  user:
+    name: "{{ registry_user }}"
+    group: "{{ registry_user }}"
+
+- name: ensure registry dirs exist
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: dockerhub
+    group: dockerhub
+    mode: '0700'
+  with_items: 
+    - /etc/registry
+    - /etc/registry/auth
+    - /var/registry-data
+
+- name: clear registry auth
+  file:
+    path: /etc/registry/auth/htpasswd
+    state: absent
+
+- name: write users into registry auth
+  shell: |
+    docker run \
+    --entrypoint htpasswd \
+    registry:2 \
+    -Bbn {{ item.user }} {{ item.password }} \
+    >> /etc/registry/auth/htpasswd
+  with_items: "{{ registry_user_db }}"
+  no_log: True
+
+- name: remove blank lines from htpasswd
+  lineinfile:
+    path: /etc/registry/auth/htpasswd
+    state: absent
+    regexp: '^$'
+
+- name: create docker registry docker-compose.yml
+  copy: 
+    dest: /etc/registry/docker-compose.yml
+    content: | 
+      registry:
+        restart: always
+        image: registry:2
+        ports:
+          - "127.0.01:5000:5000"
+        environment:
+          REGISTRY_AUTH: htpasswd
+          REGISTRY_AUTH_HTPASSWD_PATH: /auth/htpasswd
+          REGISTRY_AUTH_HTPASSWD_REALM: Registry Realm
+        volumes:
+          - /etc/registry/auth:/auth
+          - /var/registry:/var/lib/registry
+    owner: dockerhub
+    group: dockerhub
+    mode: '0400'
+
+- name: stop registry 
+  command: docker-compose down
+  args:
+    chdir: /etc/registry
+
+- name: start registry
+  command: docker-compose up -d
+  args:
+    chdir: /etc/registry
