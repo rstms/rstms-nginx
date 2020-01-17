@@ -9,8 +9,11 @@
     enable_nginx: False
     enable_certbot: False 
     enable_registry: False
+    enable_fileserver: False
 
   roles: 
+
+  - role: docker
 
   - role: nginx
     when: enable_nginx|bool
@@ -20,3 +23,6 @@
 
   - role: registry
     when: enable_registry|bool
+
+  - role: fileserver 
+    when: enable_fileserver|bool

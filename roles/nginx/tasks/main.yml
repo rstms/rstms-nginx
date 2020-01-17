@@ -89,11 +89,17 @@
     group: '{{ www_user }}'
   with_items: '{{ domains }}'
 
-- name: edit server_names_hash_bucket_size
+- name: edit nginx.conf settings
   replace:
     path: /etc/nginx/nginx.conf
-    regexp: '^(\s*server_names_hash_bucket_size\s).*;$'
-    replace: '\164;'
+    regexp: '{{ item.regexp }}'
+    replace: '{{ item.replace }}'
+  register: status_edit
+  with_items:
+    - { 'regexp': '^(\s*)#*\s*(server_names_hash_bucket_size)\s.*;$', 'replace': '\1\2 64;' }
+    - { 'regexp': '^(\s*worker_connections)\s+.*$', 'replace': '\1 1024;' }
+
+- debug: 'msg={{ status_edit }}'
 
 - name: check nginx config files for errors
   command: nginx -t

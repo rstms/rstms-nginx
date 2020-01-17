@@ -1,0 +1,88 @@
+- name: test for docker key 
+  shell: '[ -n "$(apt-key fingerprint {{ docker_key_fingerprint }})" ]'
+  ignore_errors: yes
+  register: install_docker
+
+- name: install docker on debian
+  debug:
+    msg: "Installing docker as described at https://docs.docker.com/install/linux/docker-ce/debian/"
+  when: install_docker.rc|bool 
+
+- name: apt remove old docker distribution packages
+  apt: 
+    state: absent
+    name:
+      - docker
+      - docker-engine
+      - docker.io
+      - containerd 
+      - runc
+  when: install_docker.rc|bool 
+
+- name: update and install apt packages
+  apt:
+    update_cache: yes
+    name: 
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg2
+      - software-properties-common
+  when: install_docker.rc|bool 
+     
+- name: get docker key
+  shell: curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add -                                                                
+  when: install_docker.rc|bool 
+
+- name: verify key
+  command: apt-key fingerprint 0EBFCD88
+  register: verify_key
+  when: install_docker.rc|bool 
+
+- name: check that fingerprint matches docker website
+  shell: echo "{{ verify_key.stdout_lines[1] }}" | tr -d ' ' | grep "9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
+  register: verify_fingerprint
+  when: install_docker.rc|bool 
+
+- name: add docker repository
+  shell: |
+    add-apt-repository \
+      "deb [arch=amd64] https://download.docker.com/linux/debian \
+      $(lsb_release -cs) \
+      stable"
+  when: install_docker.rc|bool 
+
+- name: update apt and add the docker packages
+  apt:
+    update_cache: yes
+    pkg:
+    - docker-ce
+    - docker-ce-cli
+    - containerd.io
+  when: install_docker.rc|bool 
+
+- name: verify docker
+  command: docker run hello-world
+  when: install_docker.rc|bool 
+
+- name: install docker-compose as described at https://docs.docker.com/compose/install/
+  shell: curl -L "https://github.com/docker/compose/releases/download/1.25.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+  when: install_docker.rc|bool 
+
+- name: make docker-compose executable
+  command: chmod +x /usr/local/bin/docker-compose
+  when: install_docker.rc|bool 
+
+- name: test docker
+  command: docker --version
+  register: result
+
+- name: output docker version
+  debug: var=result.stdout  
+
+- name: test docker-compose
+  command: docker-compose --version
+  register: result
+
+- name: output docker-compose version
+  debug: var=result.stdout

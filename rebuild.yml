@@ -1,0 +1,94 @@
+- hosts: localhost
+  connection: local
+  gather_facts: False
+
+  vars:
+    keypair: id_rsa 
+    instance_name: awx.rstms.net
+    instance_size: s-2vcpu-4gb
+    instance_region: nyc3
+    instance_image: debian-10-x64
+    floating_ip: "138.197.58.60"
+    do_token: "{{ lookup('file', '~/.digitalocean/token') }}"
+    current_droplet_id: ''
+
+  tasks:
+
+    - name: ensure ssh key {{ keypair }}.pub is uploaded to digitalocean
+      digital_ocean_sshkey:
+        oauth_token: "{{ do_token }}"
+        ssh_pub_key: "{{ lookup('file', '~/.ssh/' + keypair + '.pub') }}"
+        state: present
+      register: key_data 
+
+    - name: get id of instance attached to floating ip {{ floating_ip }}
+      digital_ocean_floating_ip_info:
+        oauth_token: "{{ do_token }}"
+      register: floating_ip_data
+
+    #- debug: var=floating_ip_data
+
+    - name: output floating ip data
+      set_fact: 
+        current_droplet_id: "{{ item.id | default('') }}"
+      with_items: "{{ floating_ip_data.floating_ips | selectattr('ip', 'equalto', floating_ip ) | map(attribute='droplet') | list }}"
+      
+    - debug: var=current_droplet_id
+
+    - name: destroy instance id ({{ current_droplet_id }}) if present
+      digital_ocean_droplet:
+        id: "{{ current_droplet_id }}"
+        oauth_token: "{{ do_token }}"
+        state: absent 
+      when: current_droplet_id !=  ''
+      register: destroy_result
+
+    - name: droplet destroy result
+      debug: var=destroy_result
+
+    - name: read status 
+      shell: ./digital_ocean.py --droplets | jq '.droplets[] | select(.name=="{{ instance_name }}")|{"status":.status,"name":.name,"id":.id}'
+      register: result
+      until: result.stdout.find('active') == -1
+      retries: 20
+      delay: 3
+
+    - name: show status
+      debug: var=result.stdout
+
+    - name: provision instance
+      digital_ocean_droplet:
+        state: present
+        name: "{{ instance_name }}"
+        oauth_token: "{{ do_token }}"
+        size: "{{ instance_size }}"
+        region: "{{ instance_region }}"
+        image: "{{ instance_image }}"
+        ssh_keys:
+          - "{{ key_data.data.ssh_key.id }}"
+        unique_name: yes
+        wait: yes
+      register: new_droplet
+
+    - debug: var=new_droplet
+
+    - name: output ip
+      debug:
+        msg: "IP is {{ new_droplet.data.ip_address }}"
+
+    - name: "assign floating IP to droplet"
+      digital_ocean_floating_ip:
+        state: present
+        ip: "{{ floating_ip }}"
+        droplet_id: "{{ new_droplet.data.droplet.id }}"
+        oauth_token: "{{ do_token }}"
+
+    - name: Wait for SSH to come up
+      #wait_for: host={{ new_droplet.data.ip_address }} port=22 delay=60 timeout=320 state=started
+      wait_for: host={{ new_droplet.data.ip_address }} port=22 timeout=320 state=started
+
+    - name: remove old ssh host key from known_hosts
+      shell: ssh-keygen -f ~/.ssh/known_hosts -H -R awx.rstms.net
+
+    - name: add new ssh host key to known_hosts
+      shell: ssh-keyscan -H awx.rstms.net >>~/.ssh/known_hosts

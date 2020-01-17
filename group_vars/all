@@ -8,4 +8,5 @@ registry_user: dockerhub
 enable_nginx: True
 enable_certbot: True
 enable_registry: True
-registry_user_db: "{{ lookup('file', lookup('env', 'HOME')+'/secret/registry-users.json') }}"
+registry_user_db: "{{ lookup('file', lookup('env', 'HOME')+'/secrets/docker-registry-users.json') }}"
+certbot_email: mkrueger@rstms.net
